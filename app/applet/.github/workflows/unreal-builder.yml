@@ -1,0 +1,60 @@
+name: Unreal Engine Build Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+      build_target:
+        description: 'Target Platform (Android, iOS, Win64)'
+        required: true
+        default: 'Android'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # Explicitly run on the user's isolated local Unreal machine
+    runs-on: [self-hosted, unreal]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Run Unreal Automation Tool (UAT) Build
+        id: uat_build
+        shell: powershell
+        run: |
+          # This invokes the local UE5 installation UAT to build the project
+          $EnginePath = $env:UNREAL_ENGINE_ROOT
+          $UAT = "$EnginePath\Engine\Build\BatchFiles\RunUAT.bat"
+          $Project = "$env:GITHUB_WORKSPACE\LyraStarterGame.uproject"
+          
+          & $UAT BuildCookRun -project="$Project" -targetplatform=${{ github.event.inputs.build_target }} -build -cook -stage -package -archive -archivedirectory="$env:GITHUB_WORKSPACE\ArchivedBuilds" -clientconfig=Development
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: Archive Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-build-logs
+          path: |
+            Saved/Logs/
+            Intermediate/Build/
+          retention-days: 7
+
+      - name: Upload Playable Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lyra-Mobile-Build
+          path: ArchivedBuilds/
+          retention-days: 7

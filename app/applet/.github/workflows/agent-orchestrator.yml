@@ -1,0 +1,50 @@
+name: Autonomous Agent Orchestrator
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Agent Command (e.g. "Run Census")'
+        required: true
+        default: 'Run Census'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write # REQUIRED FOR GCP OIDC WORKLOAD IDENTITY
+
+jobs:
+  agent-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Authenticate to Google Cloud (OIDC/WIF)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Setup Python for Agent
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Agent Dependencies
+        run: pip install -r .github/agent/requirements.txt
+
+      - name: Execute Autonomous Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_PAYLOAD: ${{ toJSON(github.event) }}
+          COMMAND: ${{ github.event.inputs.command }}
+        run: python .github/agent/core.py
